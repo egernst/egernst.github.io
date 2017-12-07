@@ -15,3 +15,6 @@ draft: true
  * Overall networkign architecture "stuff" -- edge, central office, etc.
 - Any Go Gotchas/learnings along the way
 - Saving my vim-go setup for easy replication later?
+
+
+- Type one for my notes when reading the [BPF paper](http://www.tcpdump.org/papers/bpf-usenix93.pdf)
