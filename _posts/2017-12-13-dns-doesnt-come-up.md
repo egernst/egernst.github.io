@@ -6,13 +6,14 @@ category: posts
 
 Jotting down some notes to help recall various pitfalls/errors observed when bringing up Kubernetes
 
-## With CRIO
+## Restarting a kubernetes cluster after a reset when using CRIO.
 
 When doing a kubeadm reset, appears that things aren't necessarily cleaned up the same as when docker
 is used. To make sure all ports are released, ```ps -ae | grep kub```, and kill any remaning
 kube* processes.
 
-This is observed with CRIO 1.0.4 and K8S v1.8.3
+This is observed with CRIO 1.0.4 and K8S v1.8.3.  I haven't seen this with docker.
+
 
 ## kube-dns stuck in ContainerCreating state
 
@@ -30,7 +31,8 @@ sudo -E kubectl get pods --all-namespaces -w
 Have observed that even though the flannel containers start up, the DNS is still stuck:
 
 ```
-$ sudo -E kubectl get pods --all-namespaces                                                                                         
+$ sudo -E kubectl get pods --all-namespaces
+
 NAMESPACE     NAME                                        READY     STATUS              RESTARTS   AGE
 kube-system   etcd-eernstworkstation                      1/1       Running             0          2m
 kube-system   kube-apiserver-eernstworkstation            1/1       Running             0          2m
@@ -64,3 +66,5 @@ Dec 13 08:40:22 eernstworkstation kubelet[159502]: E1213 08:40:22.323179  159502
 Dec 13 08:40:22 eernstworkstation kubelet[159502]: E1213 08:40:22.221520  159502 cni.go:250] Error while adding to cni network: no IP addresses available in network: cbr0
 Dec 13 08:40:22 eernstworkstation kubelet[159502]: E1213 08:40:22.221486  159502 cni.go:301] Error adding network: no IP addresses available in network: cbr0
 ```
+
+This is likely caused by stale CNI state on the platform.  CNI stores information at /var/lib/cni/<plugins>.  To fix this up, sudo rm -rf /varlib/cni/*
