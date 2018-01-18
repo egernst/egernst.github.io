@@ -1,4 +1,3 @@
-
 ---
 layout: post
 title:  Passing a Graphics card to a Clear Container using VFIO
@@ -12,11 +11,11 @@ category: posts
 
 The directions below are specific to an Ubuntu 16.04 host system equipped with a GeForce GTX 550 Ti graphics card.  While the process should be the same, YMMV.
 
-1. Make sure your system supports IOMMU groups
+###  1. Make sure your system supports IOMMU groups
 
 todo -- get directions from SRIOV page
  
-2. Make sure your graphics card is in its own IOMMU group
+### 2. Make sure your graphics card is in its own IOMMU group
 
 ```
 $ find /sys/kernel/iommu_groups/ -type l | grep 03:00
@@ -28,7 +27,7 @@ In our case, there are two devices within the IOMMU group "17" - 03:00.0 and 03:
 of the graphics card being a multi function device for both graphics and audio.  As a result, it is required
 that both devices be bound to vfio-pci in order to create a viable IOMMU group for device pass through.
 
-3. Setup the device to bind to vfio-pci rather than its default (ie, nouvueau or other).
+### 3. Setup the device to bind to vfio-pci rather than its default (ie, nouvueau or other).
 
 To avoid potential graphics instability on the platform, it is advisable to bind to vfio-pci at 
 boot time rather than after the host system is up. To achieve this on Ubuntu 16.04, create the
@@ -76,7 +75,7 @@ For these changes to take effect a reboot is required:
 $ sudo reboot
 ```
 
-4. Ensure VFIO modules are loaded
+### 4,  Ensure VFIO modules are loaded
 
 ```
 $ sudo modprobe vfio_iommu_type
