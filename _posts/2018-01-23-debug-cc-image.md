@@ -14,6 +14,17 @@ Yeah, there are better ways to do some of the steps, but this should give you th
 
 First, update the image you are using to create a new debug service.  
 
+### 0. Create custom image which has bash in it
+
+The default base image in the guest no longer containers bash.  Let's create a custom image which has it enabled:
+
+go get github.com/clearcontainers/osbuilder
+cd $GOPATH/src/github.com/clearcontainers/osbuilder
+EXTRA_PKGS="dbus-bin dbus-autostart util-linux-bin p11-kit-bin bash shadow ca-certs dist-pam-configs xz-bin tar-bin grep-bin sed-bin pigz-bin iproute2-bin procps-ng-bin psstop-bin htop-bin curl nano make-bin" make rootfs
+make image
+make install-image
+
+
 ### 1. Mount the Clear Containers image
 
 You may need to adjust which loop device you sue, and of course where you mount it.
