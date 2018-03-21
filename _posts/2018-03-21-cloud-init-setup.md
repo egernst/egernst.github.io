@@ -26,12 +26,12 @@ chpasswd: { expire: False }
 ssh_pwauth: True
 ```
 
-Create the image to be used on initial boot:
+ 4. Create the cloud seed image to be used on initial boot:
 ```
 cloud-localds --disk-format qcow2 seed.img seed
 ```
 
-4. Initial boot
+ 5. Initial boot
 ```
  kvm -hda mine.image.qcow2 -nographic -cdrom seed.img
 ``` 
