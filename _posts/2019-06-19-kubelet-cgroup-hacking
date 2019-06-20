@@ -1,3 +1,9 @@
+---
+layout: post
+title: kubelet cgroup hacking notes
+category: posts
+---
+
 # Cgroup management with respect to pod creation
 
 Kubelet manages pod cgroups, though in a different way depending on the QoS of the pod. `guaranteed` cgroups are placed at the top of the `kubepods` hierarchy, while `best-effort`, `burstable` pods, while `guaranteed` are placed within separate best-effort and burstable cgroups under kubepods.
