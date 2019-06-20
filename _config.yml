@@ -2,8 +2,8 @@ permalink: /posts/:title
 markdown: kramdown
 theme: jekyll-theme-minimal
 
-gems:
-  - jekyll-sitemap
+#gems:
+# - jekyll-sitemap
 
 name: Eric Ernst
 url: https://egernst.github.io
