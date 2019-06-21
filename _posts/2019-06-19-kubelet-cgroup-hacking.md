@@ -99,6 +99,10 @@ Memory is quite a bit different, and is only handled pending the QoS feature gat
 ```
 
 The actual cgroup handling is done pending the QoS [class](https://github.com/kubernetes/kubernetes/blob/c47ab33e670cd5589b07418457e39b25cea6512f/pkg/kubelet/cm/qos_container_manager_linux.go#L195-L241):
+
+<details><summary> setMemoryReserve: </summary>
+<p>
+
 ```go
 // setMemoryReserve sums the memory limits of all pods in a QOS class,
 // calculates QOS class memory limits, and set those limits in the
@@ -149,6 +153,9 @@ func (m *qosContainerManagerImpl) setMemoryReserve(configs map[v1.PodQOSClass]*C
 }
 ```
 
+</p>
+</details>
+
 ## pod cgroup creation
 
 After updating QoS, the pod specific cgroup is created, as seen [here](https://github.com/kubernetes/kubernetes/blob/c47ab33e670cd5589b07418457e39b25cea6512f/pkg/kubelet/kubelet.go#L1616).
@@ -156,6 +163,9 @@ After updating QoS, the pod specific cgroup is created, as seen [here](https://g
 Where the cgroup is created depends on the pod's QoS.  Guaranteed are placed in the kubernetes 'root', while burstable and best-effort are placed at root/burstable and root/best-effort, respectively.
 
 Implementation of the function is [here](https://github.com/kubernetes/kubernetes/blob/c47ab33e670cd5589b07418457e39b25cea6512f/pkg/kubelet/cm/pod_container_manager_linux.go#L76-L104)
+
+<details><summary> EnsureExists: </summary>
+<p>
 
 ```go
 // EnsureExists takes a pod as argument and makes sure that
@@ -188,13 +198,15 @@ func (m *podContainerManagerImpl) EnsureExists(pod *v1.Pod) error {
 	return nil
 }
 ```
+</p>
+</details>
 
 Resource summation for the pod is handled by [`ResourceConfigForPod`](https://github.com/kubernetes/kubernetes/blob/c47ab33e670cd5589b07418457e39b25cea6512f/pkg/kubelet/cm/helpers_linux.go#L109)
 
 <details><summary> ResourceConfigForPod: </summary>
 <p>
 
-```go
+	```go
 // ResourceConfigForPod takes the input pod and outputs the cgroup resource config.
 func ResourceConfigForPod(pod *v1.Pod, enforceCPULimits bool, cpuPeriod uint64) *ResourceConfig {
 	// sum requests and limits.
@@ -276,6 +288,10 @@ func ResourceConfigForPod(pod *v1.Pod, enforceCPULimits bool, cpuPeriod uint64) 
 </details>
 
 The application of the cgroup is handled by a [cgroup manager](https://github.com/kubernetes/kubernetes/blob/c47ab33e670cd5589b07418457e39b25cea6512f/pkg/kubelet/cm/cgroup_manager_linux.go#L448):
+
+<details><summary> Create: </summary>
+<p>
+
 ```go
 447 // Create creates the specified cgroup
 448 func (m *cgroupManagerImpl) Create(cgroupConfig *CgroupConfig) error {
@@ -324,4 +340,134 @@ The application of the cgroup is handled by a [cgroup manager](https://github.co
 491
 492         return nil
 493 }
+```
+
+</p>
+</details>
+
+
+## ContainerConfigCreation
+
+Looking at [generateLinuxContainerConfig](pkg/kubelet/qos/policy.go) as a reference for what will need to be done if PodOverhead feature is used and we need to pass to the CRI a LinuxContainerResource field for the pod workload requirements and the overhead.
+
+<details><summary> Code: </summary>
+<p>
+
+```go
+// generateLinuxContainerConfig generates linux container config for kubelet runtime v1.
+func (m *kubeGenericRuntimeManager) generateLinuxContainerConfig(container *v1.Container, pod *v1.Pod, uid *int64, username string) *runtimeapi.LinuxContainerConfig {
+	lc := &runtimeapi.LinuxContainerConfig{
+		Resources:       &runtimeapi.LinuxContainerResources{},
+		SecurityContext: m.determineEffectiveSecurityContext(pod, container, uid, username),
+	}
+
+	// set linux container resources
+	var cpuShares int64
+	cpuRequest := container.Resources.Requests.Cpu()
+	cpuLimit := container.Resources.Limits.Cpu()
+	memoryLimit := container.Resources.Limits.Memory().Value()
+	oomScoreAdj := int64(qos.GetContainerOOMScoreAdjust(pod, container,
+		int64(m.machineInfo.MemoryCapacity)))
+	// If request is not specified, but limit is, we want request to default to limit.
+	// API server does this for new containers, but we repeat this logic in Kubelet
+	// for containers running on existing Kubernetes clusters.
+	if cpuRequest.IsZero() && !cpuLimit.IsZero() {
+		cpuShares = milliCPUToShares(cpuLimit.MilliValue())
+	} else {
+		// if cpuRequest.Amount is nil, then milliCPUToShares will return the minimal number
+		// of CPU shares.
+		cpuShares = milliCPUToShares(cpuRequest.MilliValue())
+	}
+	lc.Resources.CpuShares = cpuShares
+	if memoryLimit != 0 {
+		lc.Resources.MemoryLimitInBytes = memoryLimit
+	}
+	// Set OOM score of the container based on qos policy. Processes in lower-priority pods should
+	// be killed first if the system runs out of memory.
+	lc.Resources.OomScoreAdj = oomScoreAdj
+
+	if m.cpuCFSQuota {
+		// if cpuLimit.Amount is nil, then the appropriate default value is returned
+		// to allow full usage of cpu resource.
+		cpuPeriod := int64(quotaPeriod)
+		if utilfeature.DefaultFeatureGate.Enabled(kubefeatures.CPUCFSQuotaPeriod) {
+			cpuPeriod = int64(m.cpuCFSQuotaPeriod.Duration / time.Microsecond)
+		}
+		cpuQuota := milliCPUToQuota(cpuLimit.MilliValue(), cpuPeriod)
+		lc.Resources.CpuQuota = cpuQuota
+		lc.Resources.CpuPeriod = cpuPeriod
+	}
+
+	return lc
+```
+</p>
+</details>
+
+### OOM Adjustments?
+
+Everything is done based on the given request and limits fields, except OOMAdj.
+
+OOMAdj is set statically if its QoS is best-effort or guaranteed.  if it is burstable, the value is calculated to be somewhere between best-effort or gauranteed based on the *container*s memory requests.
+
+Default values per QoS/type are shown [here](https://github.com/kubernetes/kubernetes/blob/master/pkg/kubelet/qos/policy.go#L25-L36):
+```go
+const (
+        // PodInfraOOMAdj is very docker specific. For arbitrary runtime, it may not make
+        // sense to set sandbox level oom score, e.g. a sandbox could only be a namespace
+        // without a process.
+        // TODO: Handle infra container oom score adj in a runtime agnostic way.
+        PodInfraOOMAdj        int = -998
+        KubeletOOMScoreAdj    int = -999
+        DockerOOMScoreAdj     int = -999
+        KubeProxyOOMScoreAdj  int = -999
+        guaranteedOOMScoreAdj int = -998
+        besteffortOOMScoreAdj int = 1000
+)
+```	
+
+You can see this gettingn setup in the oomadj score [function](https://github.com/kubernetes/kubernetes/blob/master/pkg/kubelet/qos/policy.go#L44-L78):
+
+
+```go
+// GetContainerOOMAdjust returns the amount by which the OOM score of all processes in the
+// container should be adjusted.
+// The OOM score of a process is the percentage of memory it consumes
+// multiplied by 10 (barring exceptional cases) + a configurable quantity which is between -1000
+// and 1000. Containers with higher OOM scores are killed if the system runs out of memory.
+// See https://lwn.net/Articles/391222/ for more information.
+func GetContainerOOMScoreAdjust(pod *v1.Pod, container *v1.Container, memoryCapacity int64) int {
+	if types.IsCriticalPod(pod) {
+		// Critical pods should be the last to get killed.
+		return guaranteedOOMScoreAdj
+	}
+
+	switch v1qos.GetPodQOS(pod) {
+	case v1.PodQOSGuaranteed:
+		// Guaranteed containers should be the last to get killed.
+		return guaranteedOOMScoreAdj
+	case v1.PodQOSBestEffort:
+		return besteffortOOMScoreAdj
+	}
+
+	// Burstable containers are a middle tier, between Guaranteed and Best-Effort. Ideally,
+	// we want to protect Burstable containers that consume less memory than requested.
+	// The formula below is a heuristic. A container requesting for 10% of a system's
+	// memory will have an OOM score adjust of 900. If a process in container Y
+	// uses over 10% of memory, its OOM score will be 1000. The idea is that containers
+	// which use more than their request will have an OOM score of 1000 and will be prime
+	// targets for OOM kills.
+	// Note that this is a heuristic, it won't work if a container has many small processes.
+	memoryRequest := container.Resources.Requests.Memory().Value()
+	oomScoreAdjust := 1000 - (1000*memoryRequest)/memoryCapacity
+	// A guaranteed pod using 100% of memory can have an OOM score of 10. Ensure
+	// that burstable pods have a higher OOM score adjustment.
+	if int(oomScoreAdjust) < (1000 + guaranteedOOMScoreAdj) {
+		return (1000 + guaranteedOOMScoreAdj)
+	}
+	// Give burstable pods a higher chance of survival over besteffort pods.
+	if int(oomScoreAdjust) == besteffortOOMScoreAdj {
+		return int(oomScoreAdjust - 1)
+	}
+	return int(oomScoreAdjust)
+}
 ```
